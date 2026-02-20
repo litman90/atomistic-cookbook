@@ -1,2 +1,4 @@
 nox
 docutils
+pyyaml
+requests

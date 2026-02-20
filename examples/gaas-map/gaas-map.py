@@ -5,7 +5,7 @@ PCA/PCovR Visualization of a training dataset for a potential
 :Authors: Michele Ceriotti `@ceriottm <https://github.com/ceriottm/>`_,
           Giulio Imbalzano
 
-This example uses ``rascaline`` and ``metatensor`` to compute
+This example uses ``featomic`` and ``metatensor`` to compute
 structural properties for the structures in a training dataset
 for a ML potential.
 These are then used with simple dimensionality reduction algorithms
@@ -19,6 +19,8 @@ and the principal covariate regression scheme as implemented in
 `Helfrecht (2020) <http://doi.org/10.1088/2632-2153/aba9ef>`_.
 """
 
+# sphinx_gallery_thumbnail_number = 2
+
 import os
 
 import ase
@@ -26,18 +28,17 @@ import ase.io
 import chemiscope
 import numpy as np
 import requests
+from featomic import AtomicComposition, SoapPowerSpectrum
 from matplotlib import pyplot as plt
 from metatensor import mean_over_samples
-from rascaline import AtomicComposition, SoapPowerSpectrum
 from sklearn.decomposition import PCA
 from sklearn.linear_model import RidgeCV
 from skmatter.decomposition import PCovR
 from skmatter.preprocessing import StandardFlexibleScaler
+from urllib3.util.retry import Retry
 
 
-# sphinx_gallery_thumbnail_number = 2
-
-######################################################################
+# %%
 # First, we load the structures, extracting some of the properties for
 # more convenient manipulation. These are
 # :math:`\mathrm{Ga}_x\mathrm{As}_{1-x}` structures used in `Imbalzano &
@@ -45,20 +46,38 @@ from skmatter.preprocessing import StandardFlexibleScaler
 # train a ML potential to describe the full composition range.
 #
 
-filename = "gaas_training.xyz"
-if not os.path.exists(filename):
-    url = f"https://zenodo.org/records/10566825/files/{filename}"
-    response = requests.get(url)
+
+def fetch_dataset(filename, base_url, local_path=""):
+    """Helper function to load data with retries on errors."""
+
+    local_file = local_path + filename
+    if os.path.isfile(local_file):
+        return
+
+    # Retry strategy: wait 1s, 2s, 4s, 8s, 16s on 429/5xx errors
+    retry_strategy = Retry(
+        total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504]
+    )
+    session = requests.Session()
+    session.mount("https://", requests.adapters.HTTPAdapter(max_retries=retry_strategy))
+
+    # Fetch with automatic retry and error raising
+    response = session.get(base_url + filename)
     response.raise_for_status()
-    with open(filename, "wb") as f:
-        f.write(response.content)
+
+    with open(local_file, "wb") as file:
+        file.write(response.content)
+
+
+filename = "gaas_training.xyz"
+fetch_dataset(filename, "https://zenodo.org/records/10566825/files/")
 
 structures = ase.io.read(filename, ":")
 energy = np.array([f.info["energy"] for f in structures])
 natoms = np.array([len(f) for f in structures])
 
 
-######################################################################
+# %%
 # Remove atomic energy baseline
 # -----------------------------
 #
@@ -73,9 +92,9 @@ natoms = np.array([len(f) for f in structures])
 # regression.
 #
 
-# rascaline has an `AtomicComposition` calculator that streamlines
+# featomic has an `AtomicComposition` calculator that streamlines
 # this (simple) calculation
-calculator = AtomicComposition(**{"per_structure": True})
+calculator = AtomicComposition(**{"per_system": True})
 rho0 = calculator.compute(structures)
 
 # the descriptors are returned as a `TensorMap` object, that contains
@@ -84,7 +103,7 @@ rho0
 
 # for easier manipulation, we extract the features as a dense vector
 # of composition weights
-comp_feats = rho0.keys_to_properties(["species_center"]).block(0).values
+comp_feats = rho0.keys_to_properties(["center_type"]).block(0).values
 
 # a one-liner to fit a linear model and compute "dressed energies"
 atom_energy = (
@@ -95,7 +114,7 @@ atom_energy = (
 cohesive_peratom = (energy - atom_energy) / natoms
 
 
-######################################################################
+# %%
 # The baseline makes up a large fraction of the total energy, but actually
 # the residual (which is the part that matters) is still large.
 #
@@ -105,68 +124,60 @@ ax.plot(energy / natoms, atom_energy / natoms, "b.")
 ax.set_xlabel("Energy / (eV/atom)")
 ax.set_ylabel("Atomic e. / (eV/atom)")
 plt.show()
-print(f"RMSE / (eV/atom): {np.sqrt(np.mean((cohesive_peratom)**2))}")
+print(f"RMSE / (eV/atom): {np.sqrt(np.mean((cohesive_peratom) ** 2))}")
 
 
-######################################################################
+# %%
 # Compute structural descriptors
 # ------------------------------
 #
 # In order to visualize the structures as a low-dimensional map, we start
-# by computing suitable ML descriptors. Here we have used ``rascaline`` to
+# by computing suitable ML descriptors. Here we have used ``featomic`` to
 # evaluate average SOAP features for the structures.
 #
 
-# hypers for evaluating rascaline features
+# hypers for evaluating features
 hypers = {
-    "cutoff": 4.5,
-    "max_radial": 6,
-    "max_angular": 4,
-    "atomic_gaussian_width": 0.3,
-    "cutoff_function": {"ShiftedCosine": {"width": 0.5}},
-    "radial_basis": {"Gto": {"accuracy": 1e-6}},
-    "center_atom_weight": 1.0,
+    "cutoff": {"radius": 4.5, "smoothing": {"type": "ShiftedCosine", "width": 0.5}},
+    "density": {"type": "Gaussian", "width": 0.3},
+    "basis": {
+        "type": "TensorProduct",
+        "max_angular": 4,
+        "radial": {"type": "Gto", "max_radial": 5},
+    },
 }
 calculator = SoapPowerSpectrum(**hypers)
 rho2i = calculator.compute(structures)
 
 # neighbor types go to the keys for sparsity (this way one can
 # compute a heterogeneous dataset without having blocks of zeros)
-rho2i = rho2i.keys_to_samples(["species_center"]).keys_to_properties(
-    ["species_neighbor_1", "species_neighbor_2"]
+rho2i = rho2i.keys_to_samples(["center_type"]).keys_to_properties(
+    ["neighbor_1_type", "neighbor_2_type"]
 )
 
 # computes structure-level descriptors and then extracts
 # the features as a dense array
-rho2i_structure = mean_over_samples(rho2i, sample_names=["center", "species_center"])
+rho2i_structure = mean_over_samples(rho2i, sample_names=["atom", "center_type"])
 rho2i = None  # releases memory
 features = rho2i_structure.block(0).values
 
 
-######################################################################
+# %%
 # We standardize (per atom) energy and features (computed as a *mean* over
 # atomic environments) so that they can be combined on the same footings.
-#
 
 sf_energy = StandardFlexibleScaler().fit_transform(cohesive_peratom.reshape(-1, 1))
 sf_feats = StandardFlexibleScaler().fit_transform(features)
 
 
-######################################################################
+# %%
 # PCA and PCovR projection
 # ------------------------
 #
 # Computes PCA projection to generate low-dimensional descriptors that
 # reflect structural diversity. Any other dimensionality reduction scheme
 # could be used in a similar fashion.
-#
-# We also compute the principal covariate regression (PCovR) descriptors,
-# that reduce dimensionality while combining a variance preserving
-# criterion with the requirement that the low-dimensional features are
-# capable of estimating a target quantity (here, the energy).
-#
 
-# PCA
 pca = PCA(n_components=4)
 pca_features = pca.fit_transform(sf_feats)
 
@@ -178,7 +189,13 @@ cbar = fig.colorbar(scatter, ax=ax)
 cbar.set_label("energy / eV/at.")
 plt.show()
 
-# computes PCovR map
+# %%
+# We also compute the principal covariate regression (PCovR) descriptors,
+# that reduce dimensionality while combining a variance preserving
+# criterion with the requirement that the low-dimensional features are
+# capable of estimating a target quantity (here, the energy).
+#
+
 pcovr = PCovR(n_components=4)
 pcovr_features = pcovr.fit_transform(sf_feats, sf_energy)
 
@@ -190,8 +207,7 @@ cbar = fig.colorbar(scatter, ax=ax)
 cbar.set_label("energy / (eV/at.)")
 plt.show()
 
-
-######################################################################
+# %%
 # Chemiscope visualization
 # ------------------------
 #
@@ -201,7 +217,7 @@ plt.show()
 #
 
 # extracts force data (adding considerably to the dataset size...)
-force_vectors = chemiscope.ase_vectors_to_arrows(structures, scale=1)
+force_vectors = chemiscope.ase_vectors_to_arrows(structures, key="forces", scale=1)
 force_vectors["parameters"]["global"]["color"] = 0x505050
 
 # adds properties to the ASE frames
@@ -219,7 +235,7 @@ for i, f in enumerate(structures):
 structure_properties = chemiscope.extract_properties(structures)
 
 cs = chemiscope.show(
-    frames=structures,
+    structures=structures,
     properties=structure_properties,
     shapes={"forces": force_vectors},
     # the settings are a tad verbose, but give full control over the visualization

@@ -7,6 +7,7 @@ from datetime import datetime
 extensions = [
     "sphinx_sitemap",
     "sphinx_design",
+    "sphinx_copybutton",
     "sphinx.ext.viewcode",
     "sphinx.ext.intersphinx",
     "sphinx_gallery.load_style",
@@ -29,8 +30,9 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "matplotlib": ("https://matplotlib.org/stable/", None),
     "python": ("https://docs.python.org/3", None),
-    "rascaline": ("https://luthaf.fr/rascaline/latest/", None),
+    "featomic": ("https://metatensor.github.io/featomic/latest/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
+    "torchpme": ("https://lab-cosmo.github.io/torch-pme/latest/", None),
 }
 
 html_js_files = [
@@ -160,3 +162,4 @@ def post_build_tweaks(app, exception):
 
 def setup(app):
     app.connect("build-finished", post_build_tweaks)
+    app.add_css_file("cookbook.css")

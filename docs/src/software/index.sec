@@ -8,11 +8,16 @@ in your own atomistic cooking.
 
 .. toctree::
     :maxdepth: 1
+    :hidden:
 
-    i-pi
     chemiscope
-    rascaline
-    scikit-matter
     cp2k
+    eon
+    featomic
+    gromacs
+    i-pi
     lammps
+    metatensor
     plumed
+    scikit-matter
+    torch-pme

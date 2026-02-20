@@ -1,0 +1,17 @@
+channels:
+  - metatensor
+  - conda-forge
+dependencies:
+  - python=3.12
+  - lammps-metatomic
+  - pip
+  - pip:
+    - ase
+    - chemiscope>=1.0
+    - ipi>=3.1.5
+    - metatensor-torch<0.8
+    - metatensor-operations
+    - matplotlib
+    - metatomic-torch
+    - vesin-torch <=0.3.7
+    - torch-pme>=0.3.1,<0.4

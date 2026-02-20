@@ -3,13 +3,12 @@ channels:
 dependencies:
   - python=3.11
   - pip
-  - rust >=1.65
   - pip:
     - ase==3.22.1
-    - chemiscope>=0.7
+    - chemiscope>=1.0
     - matplotlib
-    - scipy <= 1.14.9
+    - scipy
     - metatensor
-    - rascaline @ git+https://github.com/Luthaf/rascaline@ca957642f512e141c7570e987aadc05c7ac71983
-    - scikit-learn==1.4.0
-    - skmatter
+    - featomic
+    - scikit-learn
+    - skmatter>=0.3
